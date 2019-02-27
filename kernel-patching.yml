@@ -1,0 +1,55 @@
+---
+- name: Patching
+  hosts: host1 
+  become_user: root
+  serial: 1
+
+  tasks:
+
+# purpose of this task to check if application is running or stopped
+   - name: verify application/database processes are not running
+     shell: if ps -eaf | egrep 'apache|mysql'|grep -v grep > /dev/null ;then echo 'process_running';else echo 'process_not_running';fi
+     ignore_errors: true
+     register: app_process_check
+   - debug: var=app_process_check
+
+# this task is decision,play will fail/quit,if application is running
+   - name: decision point to start patching
+     fail: msg="{{ inventory_hostname }} have running Application.Please stop the application first, then attempt patching."
+     when: app_process_check.stdout == "process_running"
+
+# this task will upgrade/install the rpm’s if application is stopped
+   - name: upgrade all packages on the server
+     yum:
+     #name: "{{ yum_default_packages|join(',') }}"
+       name: "kernel"
+       state: latest
+     when: app_process_check.stdout == "process_not_running" and ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+     register: yum_update
+
+# this task is to check if kernel update happend and system needs reboot or not
+   - name: check if reboot required after kernel update.
+     shell: KERNEL_NEW=$(rpm -q -last kernel |head -1 | awk '{print $1}' | sed 's/kernel-//'); KERNEL_NOW=$(uname -r); if [[ $KERNEL_NEW != $KERNEL_NOW ]]; then echo 'reboot_needed'; else echo 'reboot_not_needed'; fi
+     ignore_errors: true
+     register: reboot_required
+   - debug: var=reboot_required
+
+# this task is to restart the system
+   - name: restart system
+     command: shutdown -r +1 "Rebooting System After Patching"
+     async: 0
+     poll: 0
+     when: reboot_required.stdout == "reboot_needed"
+     register: reboot_started
+     ignore_errors: true
+   - debug: var=reboot_started
+# this task is to wait for 3 minutues for system to come up after the reboot
+  # - name: pause for 180 secs
+  #   pause:
+  #   minutes: 3
+  #   when: reboot_started
+
+
+   - name: Wait for rebooted servers to come back
+     local_action: wait_for host={{ ansible_ssh_host | default(inventory_hostname) }} state=started port=22 delay=30 timeout=300 connect_timeout=15
+     when: reboot_started|changed

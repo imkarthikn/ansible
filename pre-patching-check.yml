@@ -1,0 +1,17 @@
+---
+- name: patching
+  hosts: my_hosts
+  tasks: 
+   - name: copy scripts
+     copy: 
+       src: /tmp/prepatch.sh
+       dest: /tmp/
+       mode: 0777
+   - name: pre-patching activity
+     command: sh /tmp/prepatch.sh {{ansible_hostname}}
+     register: output 
+   - debug: var=output
+   - name: pull output from remote hosts
+     fetch: 
+       src: /tmp/{{ansible_hostname}}-preout.txt
+       dest: /tmp/
