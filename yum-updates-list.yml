@@ -1,0 +1,9 @@
+---
+- hosts: my_hosts
+  tasks:
+    - name: list packages
+      shell: yum check-update | awk '{print $1, $2}' | sort -nr
+      args:
+        warn: false # set warn=false to prevent warning
+      register: out_all
+    - debug: var=out_all.stdout_lines 
